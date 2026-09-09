@@ -1,0 +1,8 @@
+[Unit]
+Before=local-fs.target
+
+[Mount]
+What=/dev/disk/by-partlabel/userdata
+Where=/mnt/userdata
+Type=ext4
+Options=inlinecrypt

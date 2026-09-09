@@ -1,7 +1,15 @@
 #Enable read only rootfs
 IMAGE_FEATURES += " read-only-rootfs "
 
+CORE_IMAGE_EXTRA_INSTALL += "overlayfs-qcom-paths"
+
+CORE_IMAGE_BASE_INSTALL:remove = "var-persist-mount"
+
+CORE_IMAGE_BASE_INSTALL:remove = "qcom-resize-partitions"
+
+
 CORE_IMAGE_BASE_INSTALL += " \
+    qcom-resize-partitions-abota \
     qcom-efiabctl-abota \
     "
 
