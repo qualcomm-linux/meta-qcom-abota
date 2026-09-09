@@ -1,0 +1,64 @@
+#This patch file is from Qualcomm Technologies, Inc. and is provided under the following license:
+
+#Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+#SPDX-License-Identifier: BSD-3-Clause-Clear
+
+From 7de7db606b82f074b2bb06b6a1ca20f0e12c26f6 Mon Sep 17 00:00:00 2001
+From: Abhijeet Mandloi <amandloi@qti.qualcomm.com>
+Date: Thu, 9 Jul 2026 21:10:18 +0530
+Subject: [PATCH] qcom_ptool/ptool: exempt known asymmetric bases from A/B
+ pairing check
+
+efi/system use an unsuffixed label for the 'a' slot on some platforms,
+and mdtp/mdtpsecapp/usb4fw are only ever flashed on the 'a' slot.
+ValidatePartitions() was flagging these as pairing errors and aborting
+the build for qcs8300-ride-sx.
+
+Upstream-Status: Inappropriate [customization for qcs8300-ride-sx partition layout]
+Signed-off-by: Abhijeet Mandloi <amandloi@qti.qualcomm.com>
+
+---
+ qcom_ptool/ptool.py | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/qcom_ptool/ptool.py b/qcom_ptool/ptool.py
+index cbf8f8f..6d1dea1 100755
+--- a/qcom_ptool/ptool.py
++++ b/qcom_ptool/ptool.py
+@@ -2259,6 +2259,12 @@ def ParseXML(XMLFile):
+         PrintBanner("MBR type discovered in XML file, Output will be MBR")
+
+
++# Partitions that are intentionally asymmetric between slots on some
++# platforms (e.g. only an "_a" side is flashed, or the "a" side uses the
++# bare label with no suffix) and must not be flagged by ValidatePartitions().
++AB_PAIRING_EXEMPT_BASES = {"mdtp", "mdtpsecapp", "usb4fw", "efi", "system"}
++
++
+ def ValidatePartitions():
+     """Validate the partition layout:
+
+@@ -2266,7 +2272,8 @@ def ValidatePartitions():
+         sharing a name on one LUN cannot be addressed unambiguously);
+       - A/B slot pairing is checked across all LUNs, since some boot
+         firmware (e.g. xbl_a on LUN1, xbl_b on LUN2) is split across
+-        separate boot LUNs by design.
++        separate boot LUNs by design. Bases in AB_PAIRING_EXEMPT_BASES are
++        skipped since some platforms intentionally leave one slot unpaired.
+     """
+     errors = []
+     bases_a: set[str] = set()
+@@ -2288,9 +2295,9 @@ def ValidatePartitions():
+         bases_a.update(label[:-2] for label in labels if label.endswith("_a"))
+         bases_b.update(label[:-2] for label in labels if label.endswith("_b"))
+
+-    for base in sorted(bases_a - bases_b):
++    for base in sorted(bases_a - bases_b - AB_PAIRING_EXEMPT_BASES):
+         errors.append(f"'{base}_a' present but '{base}_b' missing")
+-    for base in sorted(bases_b - bases_a):
++    for base in sorted(bases_b - bases_a - AB_PAIRING_EXEMPT_BASES):
+         errors.append(f"'{base}_b' present but '{base}_a' missing")
+
+     if errors:
+--
+2.34.1
