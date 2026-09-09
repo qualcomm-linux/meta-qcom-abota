@@ -1,0 +1,56 @@
+From 992ece36d9a469b2e7d519be484d07e4a66fa10a Mon Sep 17 00:00:00 2001
+From: Abhijeet Mandloi <amandloi@qti.qualcomm.com>
+Date: Thu, 27 Aug 2026 12:00:10 +0530
+Subject: [PATCH] initramfs: update slot based on efivar bits and force reboot
+ on mount retry
+
+Signed-off-by: Abhijeet Mandloi <amandloi@qti.qualcomm.com>
+Fixes: ("Customize initramfs rootfs")
+Upstream-Status: Inappropriate [customization for internal initramfs use]
+---
+ .../initrdscripts/initramfs-framework/rootfs  | 22 +++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/rootfs b/rootfs
+index df0cbfb091..252ae494ff 100644
+--- a/rootfs
++++ b/rootfs
+@@ -51,6 +51,22 @@ rootfs_run() {
+ 				if [ -n "$bootparam_rootfstype" ]; then
+ 					flags="$flags -t$bootparam_rootfstype"
+ 				fi
++
++				third_hex=$(
++				efivar -n 8be4df61-93ca-11d2-aa0d-00e098032b8c-OsTrialBootStatus |
++				awk '/^Value:/ {val=1; next} val {for(i=1;i<=NF;i++){if($i~/^[0-9A-Fa-f]{2}$/){c++; if(c==3){print $i; exit}}}}'
++				)
++
++				b2=$((16#$third_hex))
++
++				b18val=$(( (b2 >> 2) & 1 ))
++
++				if [ "$b18val" -eq 1 ] && [ "$bootparam_root" = "/dev/disk/by-partlabel/system" ]; then
++				bootparam_root="${bootparam_root}_b"
++				export bootparam_root
++				fi
++
++
+ 				debug "mount $flags $bootparam_root $ROOTFS_DIR"
+ 				mount $flags $bootparam_root $ROOTFS_DIR
+ 				if mountpoint -q $ROOTFS_DIR; then
+@@ -58,6 +74,12 @@ rootfs_run() {
+ 				else
+ 					# It is unlikely to change, but keep trying anyway.
+ 					# Perhaps we pick a different device next time.
++					e2fsck -n $bootparam_root
++					filesystem_status=$?
++					if [ $filesystem_status -eq 8 ] || [ $filesystem_status -eq 4 ] || [ $filesystem_status -eq 12 ]; then
++						umount $ROOTFS_DIR
++						reboot -f
++					fi
+ 					umount $ROOTFS_DIR
+ 				fi
+ 			fi
+-- 
+2.34.1
+
