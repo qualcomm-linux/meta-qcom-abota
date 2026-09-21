@@ -1,0 +1,51 @@
+software =
+{
+    version = "";
+
+    stable:
+    {
+        hardware-compatibility: [ "@@MACHINE@@" ];
+
+        slot_a:
+        {
+            hardware-compatibility: [ "@@MACHINE@@" ];
+
+            images: (
+                {
+                    filename = "system.img";
+                    device = "/dev/disk/by-partlabel/system";
+                    type = "raw";
+                    installed-directly = true;
+                }
+            );
+
+            scripts: (
+                {
+                    filename = "qcom-postinstall-abota-a.sh";
+                    type = "postinstall";
+                }
+            );
+        };
+
+        slot_b:
+        {
+            hardware-compatibility: [ "@@MACHINE@@" ];
+
+            images: (
+                {
+                    filename = "system.img";
+                    device = "/dev/disk/by-partlabel/system_b";
+                    type = "raw";
+                    installed-directly = true;
+                }
+            );
+
+            scripts: (
+                {
+                    filename = "qcom-postinstall-abota-b.sh";
+                    type = "postinstall";
+                }
+            );
+        };
+    };
+}
