@@ -12,10 +12,18 @@ software =
 
             images: (
                 {
-                    filename = "system.img";
+                    filename = "@@SWUPDATE_IMAGE_SYSTEM@@";
                     device = "/dev/disk/by-partlabel/system";
                     type = "raw";
                     installed-directly = true;
+                    sha256 = "$swupdate_get_sha256(@@SWUPDATE_IMAGE_SYSTEM@@)";
+                },
+                {
+                    filename = "@@SWUPDATE_IMAGE_EFI@@";
+                    device = "/dev/disk/by-partlabel/efi";
+                    type = "raw";
+                    installed-directly = true;
+                    sha256 = "$swupdate_get_sha256(@@SWUPDATE_IMAGE_EFI@@)";
                 }
             );
 
@@ -23,6 +31,7 @@ software =
                 {
                     filename = "qcom-postinstall-abota-a.sh";
                     type = "postinstall";
+                    sha256 = "$swupdate_get_sha256(qcom-postinstall-abota-a.sh)";
                 }
             );
         };
@@ -33,10 +42,18 @@ software =
 
             images: (
                 {
-                    filename = "system.img";
+                    filename = "@@SWUPDATE_IMAGE_SYSTEM@@";
                     device = "/dev/disk/by-partlabel/system_b";
                     type = "raw";
                     installed-directly = true;
+                    sha256 = "$swupdate_get_sha256(@@SWUPDATE_IMAGE_SYSTEM@@)";
+                },
+                {
+                    filename = "@@SWUPDATE_IMAGE_EFI@@";
+                    device = "/dev/disk/by-partlabel/efi_b";
+                    type = "raw";
+                    installed-directly = true;
+                    sha256 = "$swupdate_get_sha256(@@SWUPDATE_IMAGE_EFI@@)";
                 }
             );
 
@@ -44,6 +61,7 @@ software =
                 {
                     filename = "qcom-postinstall-abota-b.sh";
                     type = "postinstall";
+                    sha256 = "$swupdate_get_sha256(qcom-postinstall-abota-b.sh)";
                 }
             );
         };

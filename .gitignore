@@ -1,0 +1,4 @@
+# Development CMS signing key for ABOTA sw-description. DEVELOPMENT ONLY and
+# intentionally never committed -- supply it locally to run a signing build.
+# The matching public cert (qcom-swupdate-dev.cert.pem) IS tracked.
+recipes-products/images/files/qcom-swupdate-dev.key.pem
