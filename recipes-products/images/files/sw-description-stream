@@ -1,0 +1,97 @@
+software =
+{
+    version = "";
+
+    stable:
+    {
+        hardware-compatibility: [ "@@MACHINE@@" ];
+
+        slot_a:
+        {
+            hardware-compatibility: [ "@@MACHINE@@" ];
+
+            images: (
+                {
+                    filename = "system.img.zck.header";
+                    device = "/dev/disk/by-partlabel/system";
+                    type = "delta";
+                    sha256 = "@@SHA256_SYSTEM@@";
+
+                    properties: {
+                        url = "@@SWUPDATE_DELTA_URL@@";
+                        chain = "raw";
+                        source = "/dev/disk/by-partlabel/system_b";
+                        source-size = "detect";
+                        zckloglevel = "info";
+                    };
+                },
+                {
+                    filename = "efi.bin.zck.header";
+                    device = "/dev/disk/by-partlabel/efi";
+                    type = "delta";
+                    sha256 = "@@SHA256_EFI@@";
+
+                    properties: {
+                        url = "@@SWUPDATE_DELTA_URL@@";
+                        chain = "raw";
+                        source = "/dev/disk/by-partlabel/efi_b";
+                        source-size = "detect";
+                        zckloglevel = "info";
+                    };
+                }
+            );
+
+            scripts: (
+                {
+                    filename = "qcom-postinstall-abota-a.sh";
+                    type = "postinstall";
+                    sha256 = "@@SHA256_POSTINST_A@@";
+                }
+            );
+        };
+
+        slot_b:
+        {
+            hardware-compatibility: [ "@@MACHINE@@" ];
+
+            images: (
+                {
+                    filename = "system.img.zck.header";
+                    device = "/dev/disk/by-partlabel/system_b";
+                    type = "delta";
+                    sha256 = "@@SHA256_SYSTEM@@";
+
+                    properties: {
+                        url = "@@SWUPDATE_DELTA_URL@@";
+                        chain = "raw";
+                        source = "/dev/disk/by-partlabel/system";
+                        source-size = "detect";
+                        zckloglevel = "info";
+                    };
+                },
+                {
+                    filename = "efi.bin.zck.header";
+                    device = "/dev/disk/by-partlabel/efi_b";
+                    type = "delta";
+                    sha256 = "@@SHA256_EFI@@";
+
+                    properties: {
+                        url = "@@SWUPDATE_DELTA_URL@@";
+                        chain = "raw";
+                        source = "/dev/disk/by-partlabel/efi";
+                        source-size = "detect";
+                        zckloglevel = "info";
+                    };
+                }
+            );
+
+            scripts: (
+                {
+                    filename = "qcom-postinstall-abota-b.sh";
+                    type = "postinstall";
+                    sha256 = "@@SHA256_POSTINST_B@@";
+                }
+            );
+        };
+    };
+}

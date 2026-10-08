@@ -1,0 +1,81 @@
+software =
+{
+    version = "";
+
+    stable:
+    {
+        hardware-compatibility: [ "@@MACHINE@@" ];
+
+        slot_a:
+        {
+            hardware-compatibility: [ "@@MACHINE@@" ];
+
+            images: (
+                {
+                    filename = "system.rdiff";
+                    device = "/dev/disk/by-partlabel/system";
+                    type = "rdiff_image";
+                    sha256 = "@@SHA256_SYSTEM@@";
+
+                    properties: {
+                        rdiffbase = "/dev/disk/by-partlabel/system_b";
+                    };
+                },
+                {
+                    filename = "efi.rdiff";
+                    device = "/dev/disk/by-partlabel/efi";
+                    type = "rdiff_image";
+                    sha256 = "@@SHA256_EFI@@";
+
+                    properties: {
+                        rdiffbase = "/dev/disk/by-partlabel/efi_b";
+                    };
+                }
+            );
+
+            scripts: (
+                {
+                    filename = "qcom-postinstall-abota-a.sh";
+                    type = "postinstall";
+                    sha256 = "@@SHA256_POSTINST_A@@";
+                }
+            );
+        };
+
+        slot_b:
+        {
+            hardware-compatibility: [ "@@MACHINE@@" ];
+
+            images: (
+                {
+                    filename = "system.rdiff";
+                    device = "/dev/disk/by-partlabel/system_b";
+                    type = "rdiff_image";
+                    sha256 = "@@SHA256_SYSTEM@@";
+
+                    properties: {
+                        rdiffbase = "/dev/disk/by-partlabel/system";
+                    };
+                },
+                {
+                    filename = "efi.rdiff";
+                    device = "/dev/disk/by-partlabel/efi_b";
+                    type = "rdiff_image";
+                    sha256 = "@@SHA256_EFI@@";
+
+                    properties: {
+                        rdiffbase = "/dev/disk/by-partlabel/efi";
+                    };
+                }
+            );
+
+            scripts: (
+                {
+                    filename = "qcom-postinstall-abota-b.sh";
+                    type = "postinstall";
+                    sha256 = "@@SHA256_POSTINST_B@@";
+                }
+            );
+        };
+    };
+}
