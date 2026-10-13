@@ -17,6 +17,20 @@ Currently supported machine: `qcs8300-ride-sx`.
 - A Yocto build environment with `kas` and BitBake installed.
 - Access to the Qualcomm Linux layers and the required branch/revision for
   the target release.
+- **Incremental OTA only:** `rdiff` and `cpio` on the host that runs
+  `generate_delta_package.sh`. These are **not** required to build images or
+  to produce or apply a full OTA — only to generate an incremental
+  (differential) package (see
+  [OTA package generation and update](#6-ota-package-generation-and-update)).
+  Install them with your distro's package manager, e.g.:
+
+  ```sh
+  # Debian/Ubuntu
+  sudo apt-get install librsync-bin cpio
+
+  # Fedora/RHEL
+  sudo dnf install librsync cpio
+  ```
 
 ## 1. Synchronize the required layers
 
@@ -75,6 +89,114 @@ target device. Locate
 `qcom-multimedia-image-qcs8300-ride-sx.rootfs.qcomflash` in the build
 output and flash it as you would any `meta-qcom` image.
 
+
+## 6. OTA package generation and update
+
+Two kinds of update package can be applied to a flashed device: a **full**
+OTA that writes the whole system/EFI image into the inactive slot, and an
+**incremental** (differential) OTA that ships only an rdiff patch between the
+installed build and the new build. The on-device apply command is identical
+for both — only how the `.swu` is produced differs.
+
+### Full OTA package
+
+The full `.swu` is produced automatically by the image build (step 4); no
+extra step is required. Find it in the image deploy directory, e.g.
+`build/tmp/deploy/images/qcs8300-ride-sx/qcom-multimedia-image-qcs8300-ride-sx.rootfs.swu`.
+
+### Incremental (differential) OTA package
+
+An incremental package is built on the host with
+`recipes-products/images/files/generate_delta_package.sh`, which computes an
+rdiff patch for each image between a **source** build (what is currently
+installed on the device) and a **dest** build (the target you want to update
+to), and bundles the slot-flip postinstall scripts so the package behaves like
+a production OTA.
+
+1. Build the baseline image (step 4) and flash it to the device (step 5),
+   then set the built images aside as the source — the delta is computed
+   against exactly these bytes, which must match what is installed on the
+   device, so keep a copy before rebuilding:
+
+   ```sh
+   mkdir -p ~/abota-ota/source
+   cp tmp/deploy/images/qcs8300-ride-sx/system.img ~/abota-ota/source/
+   cp tmp/deploy/images/qcs8300-ride-sx/efi.bin    ~/abota-ota/source/
+   ```
+
+2. Make your changes and rebuild `qcom-multimedia-image`. The new
+   `system.img`/`efi.bin` in `tmp/deploy/images/qcs8300-ride-sx/` are the dest.
+
+3. Generate the differential `.swu` (`--mode differential` is the default; run
+   from the script's own directory so `--scripts .` resolves the templates and
+   postinstall scripts):
+
+   ```sh
+   cd meta-qcom-abota/recipes-products/images/files
+
+   ./generate_delta_package.sh \
+       --output ~/abota-ota/test-rdiff.swu \
+       --source-dir ~/abota-ota/source \
+       --dest-dir /path/to/build/tmp/deploy/images/qcs8300-ride-sx \
+       --scripts .
+   ```
+
+   By default the delta covers both `system.img` and `efi.bin`; restrict it
+   with e.g. `--images "system.img"` if only the rootfs changed. The script
+   needs `rdiff` and `cpio` on the host (see [Prerequisites](#prerequisites)).
+
+   To sign the package (required when the device was built with
+   `ABOTA_SIGNING = "1"`), add `--sign` with the **same** keypair the image
+   build signs with — see [Signed OTA updates](#signed-ota-updates-optional):
+
+   ```sh
+   ./generate_delta_package.sh \
+       --output ~/abota-ota/test-rdiff.swu --sign \
+       --cert /path/to/qcom-swupdate-dev.cert.pem \
+       --key  /path/to/qcom-swupdate-dev.key.pem \
+       --source-dir ~/abota-ota/source \
+       --dest-dir /path/to/build/tmp/deploy/images/qcs8300-ride-sx \
+       --scripts .
+   ```
+
+### Apply the update on the device
+
+Copy the `.swu` to the device (into `/opt`, which is read/write) and run
+SWUpdate against the inactive slot. If the device needs network to copy the
+package, bring up Wi-Fi first:
+
+```sh
+nmcli dev wifi connect <wifi_name> password <password>
+```
+
+Check the currently active slot and select the **other** one as the update
+target:
+
+```sh
+abctl --get_active
+```
+
+Then apply the package (the command is the same for full and incremental
+packages). For example, to install into slot B on the QCS8300 RIDE-SX:
+
+```sh
+swupdate -e stable,slot_b -i /opt/test-rdiff.swu -H board:qcs8300-ride-sx -m -M -l 3
+```
+
+- `-e stable,slot_<a|b>` — select the sw-description stanza for the inactive
+  slot you are updating into (the opposite of `abctl --get_active`).
+- `-i <path>` — the `.swu` package to install.
+- `-H board:qcs8300-ride-sx` — hardware-compatibility string; must match the
+  `hardware-compatibility` entry in the package's `sw-description`.
+- `-m -M` — required update options for this A/B flow.
+- `-l 3` — log level 3 (verbose), to watch the update progress.
+
+On success the postinstall script arms trial boot and flips the active-slot
+pointer, so the device boots into the updated slot on the next reboot:
+
+```sh
+reboot
+```
 
 ## Signed OTA updates (optional)
 
