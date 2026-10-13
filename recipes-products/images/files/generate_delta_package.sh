@@ -12,7 +12,8 @@
 #       --source-dir DIR --dest-dir DIR \
 #       --scripts DIR \
 #       [--mode differential|stream] [--images "img1 img2 ..."] \
-#       [--machine MACHINE] [--delta-url URL] [--sign]
+#       [--machine MACHINE] [--delta-url URL] \
+#       [--sign --cert CERT --key KEY]
 #
 # --images is a space-separated list of image basenames (as they appear in
 # both --source-dir and --dest-dir). Defaults to "system.img efi.bin".
@@ -29,24 +30,27 @@
 #
 # --sign CMS-signs sw-description and bundles the resulting sw-description.sig
 # as the second cpio member, so the package verifies on a target built with
-# CONFIG_SIGNED_IMAGES=y. The cert/key are picked from --scripts:
-# qcom-swupdate-dev.cert.pem (signer cert) and qcom-swupdate-dev.key.pem
-# (private key). This is the same dev keypair the ABOTA image build signs
-# with, so a --sign package verifies against the on-device public cert at
-# /etc/swupdate/qcom-swupdate-dev.cert.pem. DEVELOPMENT ONLY -- the private
-# key is a signing input only and is never bundled into the .swu.
+# CONFIG_SIGNED_IMAGES=y. The cert/key are picked from --cert/--key -- any
+# filename works, there is no fixed/required name. Use the same keypair the
+# ABOTA image build signs with (SWUPDATE_CMS_CERT/SWUPDATE_CMS_KEY in
+# qcom-swupdate-abota-image.bbclass) and that matches the public cert
+# installed on-device (qcom-swupdate-runtime.conf's public-key-file), or a
+# --sign package won't verify. The private key is a signing input only and is
+# never bundled into the .swu.
 #
-# This script lives in the same dir as the sw-description templates, the
-# qcom-postinstall-abota-{a,b}.sh scripts and the dev cert/key, so --scripts
-# is simply the directory it sits in (use --scripts . when run from here).
+# This script lives in the same dir as the sw-description templates and the
+# qcom-postinstall-abota-{a,b}.sh scripts, so --scripts is simply the
+# directory it sits in (use --scripts . when run from here).
 #
 # Example (differential, default images, signed):
 #   ./generate_delta_package.sh --output ota-delta.swu --sign \
+#       --cert /path/to/cert.pem --key /path/to/key.pem \
 #       --source-dir /path/to/old/build --dest-dir /path/to/new/build \
 #       --scripts .
 #
 # Example (stream mode):
 #   ./generate_delta_package.sh --output ota-stream.swu --mode stream --sign \
+#       --cert /path/to/cert.pem --key /path/to/key.pem \
 #       --source-dir /path/to/old/build --dest-dir /path/to/new/build \
 #       --scripts . \
 #       --delta-url https://update.example.com/qcs8300-ride-sx/
@@ -68,7 +72,7 @@ else
 fi
 
 usage() {
-    echo "Usage: $0 --output OUT.swu --source-dir DIR --dest-dir DIR --scripts DIR [--mode differential|stream] [--images \"img1 img2 ...\"] [--machine MACHINE] [--delta-url URL] [--sign]" >&2
+    echo "Usage: $0 --output OUT.swu --source-dir DIR --dest-dir DIR --scripts DIR [--mode differential|stream] [--images \"img1 img2 ...\"] [--machine MACHINE] [--delta-url URL] [--sign --cert CERT --key KEY]" >&2
     exit 1
 }
 
@@ -81,6 +85,8 @@ MODE="differential"
 IMAGES="system.img efi.bin"
 DELTA_URL=""
 SIGN=0
+CMS_CERT=""
+CMS_KEY=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -119,6 +125,14 @@ while [ $# -gt 0 ]; do
         --sign)
             SIGN=1
             shift
+            ;;
+        --cert)
+            CMS_CERT="${2:?--cert requires a value}"
+            shift 2
+            ;;
+        --key)
+            CMS_KEY="${2:?--key requires a value}"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -162,16 +176,19 @@ for f in "$SW_DESCRIPTION_TEMPLATE" "$POSTINSTALL_A" "$POSTINSTALL_B"; do
     fi
 done
 
-# --sign picks the CMS signer cert and private key from --scripts, matching
-# the dev keypair the ABOTA image build signs with (SWUPDATE_CMS_CERT/KEY in
-# qcom-swupdate-abota-image.bbclass). The key is only an input to openssl cms
-# and is never bundled into the .swu.
+# --sign requires an explicit --cert/--key pair -- a public cert is only
+# meaningful paired with the matching private key, so there is no default
+# path to fall back to. Use the same keypair the ABOTA image build signs
+# with (SWUPDATE_CMS_CERT/SWUPDATE_CMS_KEY in qcom-swupdate-abota-image.bbclass)
+# and that matches the public cert installed on-device, or a --sign package
+# won't verify. The key is only an input to openssl cms and is never bundled
+# into the .swu.
 if [ "$SIGN" -eq 1 ]; then
-    CMS_CERT="$SCRIPTS_DIR/qcom-swupdate-dev.cert.pem"
-    CMS_KEY="$SCRIPTS_DIR/qcom-swupdate-dev.key.pem"
+    [ -n "$CMS_CERT" ] || { echo "Error: --sign requires --cert" >&2; exit 1; }
+    [ -n "$CMS_KEY" ] || { echo "Error: --sign requires --key" >&2; exit 1; }
     for f in "$CMS_CERT" "$CMS_KEY"; do
         if [ ! -f "$f" ]; then
-            echo "Error: --sign requires signing material in --scripts, not found: $f" >&2
+            echo "Error: --sign requires signing material, not found: $f" >&2
             exit 1
         fi
     done

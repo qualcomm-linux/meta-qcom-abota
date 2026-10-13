@@ -7,32 +7,45 @@ SWUPDATE_IMAGES = "${SWUPDATE_IMAGE_SYSTEM} ${SWUPDATE_IMAGE_EFI}"
 
 SRC_URI += "file://qcom-postinstall-abota-a.sh file://qcom-postinstall-abota-b.sh"
 
-# Sign sw-description with CMS (PKCS#7). The swupdate binary is built with
-# CONFIG_SIGNED_IMAGES=y + CONFIG_SIGALG_CMS=y (see
-# recipes-support/swupdate/swupdate/qcom-swupdate.cfg), so an unsigned .swu is
-# rejected on-device ("SWUpdate is built for signed images"). do_swuimage runs
-# "openssl cms -sign" over sw-description and bundles sw-description.sig into the
-# .swu; the device verifies it against the dev cert installed at
-# /etc/swupdate/qcom-swupdate-dev.cert.pem.
+# CMS (PKCS#7) signing of sw-description, matched by on-device verification in
+# recipes-support/swupdate/swupdate/qcom-swupdate-signing.cfg.
 #
-# The cert/key are read directly from this layer's files/ dir (located via
-# FILESPATH), NOT fetched through SRC_URI. In an image recipe SRC_URI file://
-# artifacts unpack into ${S} (= ${UNPACKDIR}), but image.bbclass declares
+# A single global flag, ABOTA_SIGNING, drives BOTH sides (this build-side
+# signing and the device-side verification wired in swupdate_%.bbappend) so
+# they can never drift out of sync. Set it in local.conf or a product layer:
+#
+#     ABOTA_SIGNING = "1"
+#
+# and drop a signing keypair into this layer's files/ (default filenames
+# below; override SWUPDATE_CMS_CERT/SWUPDATE_CMS_KEY to use any other name or
+# an out-of-tree CI secret path). That is the whole opt-in -- no file edits
+# needed. Default is "0": unsigned .swu, no cert shipped, no key required, and
+# the device accepts the unsigned package.
+#
+# When enabled, do_swuimage runs "openssl cms -sign" over sw-description and
+# bundles sw-description.sig into the .swu; the device verifies it against the
+# public cert installed by swupdate_%.bbappend (its public-key-file).
+#
+# The cert/key are read directly from the shared signing dir ABOTA_SIGNING_DIR
+# (defined in conf/layer.conf, overridable in local.conf or via export), NOT
+# fetched through SRC_URI. In an image recipe SRC_URI file:// artifacts unpack
+# into ${S} (= ${UNPACKDIR}), but image.bbclass declares
 # do_rootfs[cleandirs] += "${S}", so do_rootfs wipes anything unpacked there
 # long before do_swuimage runs -- the cert/key would vanish. Reading them from
-# the stable layer path sidesteps that, and keeping them out of SRC_URI also
-# means they can never be bundled into the .swu cpio (the private key must
-# never ship inside an update package).
+# the stable dir sidesteps that, and keeping them out of SRC_URI also means
+# they can never be bundled into the .swu cpio (a private key must never ship
+# inside an update package).
 #
-# The DEVELOPMENT dev public cert ships in this layer's files/, but the matching
-# private key does NOT -- it is git-ignored (see .gitignore) so it never enters
-# history, and must be supplied locally at files/qcom-swupdate-dev.key.pem to run
-# a signing build. DEVELOPMENT ONLY -- for release builds, override
-# SWUPDATE_CMS_KEY and SWUPDATE_CMS_CERT from a private/product layer or CI secret
-# path and install only the matching public certificate on the target.
-SWUPDATE_SIGNING = "CMS"
-SWUPDATE_CMS_CERT ?= "${@bb.utils.which(d.getVar('FILESPATH'), 'qcom-swupdate-dev.cert.pem')}"
-SWUPDATE_CMS_KEY ?= "${@bb.utils.which(d.getVar('FILESPATH'), 'qcom-swupdate-dev.key.pem')}"
+# DEVELOPMENT ONLY -- this layer ships no cert or key; both are supplied
+# locally and the private key is git-ignored (see .gitignore) so it never
+# enters history. For release builds, point ABOTA_SIGNING_DIR (or the
+# SWUPDATE_CMS_CERT/SWUPDATE_CMS_KEY paths directly) at a product/CI keypair
+# and install only the matching public cert on target.
+ABOTA_SIGNING ??= "0"
+
+SWUPDATE_CMS_CERT ?= "${ABOTA_SIGNING_DIR}/qcom-swupdate-dev.cert.pem"
+SWUPDATE_CMS_KEY ?= "${ABOTA_SIGNING_DIR}/qcom-swupdate-dev.key.pem"
+SWUPDATE_SIGNING = "${@'CMS' if d.getVar('ABOTA_SIGNING') == '1' else ''}"
 
 do_generate_ext4_image() {
     install -d ${IMAGE_ROOTFS}/efi
