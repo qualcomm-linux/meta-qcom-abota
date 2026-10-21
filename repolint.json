@@ -1,0 +1,51 @@
+{
+  "extends": "https://raw.githubusercontent.com/qualcomm/.github/main/repolint.json",
+  "rules": {
+    "source-license-headers-exist": {
+      "level": "error",
+      "rule": {
+        "type": "file-starts-with",
+        "options": {
+          "globsAll": [
+            "**/*.py",
+            "**/*.js",
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.h",
+            "**/*.ts",
+            "**/*.rs",
+            "**/*.java",
+            "**/*.go",
+            "**/*.bbclass",
+            "**/*.S",
+            "**/*.hpp",
+            "**/*.cs"
+          ],
+          "skip-paths-matching": {
+            "patterns": [
+              ".eslintrc.js",
+              "babel.config.js",
+              "build\/",
+              "jest.config.js",
+              "node_modules\/",
+              "types\/",
+              "uthash.h",
+              "recipes-products\/images\/files\/generate_delta_package.sh",
+              "recipes-products\/images\/files\/qcom-postinstall-abota-a.sh",
+              "recipes-products\/images\/files\/qcom-postinstall-abota-b.sh",
+              "classes\/qcom-swupdate-abota-image.bbclass"
+            ]
+          },
+          "lineCount": 200,
+          "patterns": [
+            "Copyright(\\s)*(\\(c\\)|©)?",
+            "SPDX-License-Identifier|Redistribution and use in source and binary forms, with or without"
+          ],
+          "flags": "i",
+          "succeed-on-non-existent": true
+        }
+      }
+    }
+  }
+}
