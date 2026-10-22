@@ -277,5 +277,5 @@ matching **public** cert on the target — never ship the private key.
 
 ## License
 
-`meta-qcom-abota` is licensed under [BSD-3-Clause-Clear](https://spdx.org/licenses/BSD-3-Clause-Clear.html).
+`meta-qcom-abota` is licensed under [BSD-3-Clause](https://spdx.org/licenses/BSD-3-Clause.html).
 See [LICENSE.txt](LICENSE.txt) for the full license text.
