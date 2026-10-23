@@ -5,7 +5,7 @@ SWUPDATE_IMAGE_EFI = "efi.bin"
 
 SWUPDATE_IMAGES = "${SWUPDATE_IMAGE_SYSTEM} ${SWUPDATE_IMAGE_EFI}"
 
-SRC_URI += "file://qcom-postinstall-abota-a.sh file://qcom-postinstall-abota-b.sh"
+SRC_URI += "file://qcom-postinstall-abota.sh"
 
 # CMS (PKCS#7) signing of sw-description, matched by on-device verification in
 # recipes-support/swupdate/swupdate/qcom-swupdate-signing.cfg.

@@ -32,8 +32,6 @@
               "types\/",
               "uthash.h",
               "recipes-products\/images\/files\/generate_delta_package.sh",
-              "recipes-products\/images\/files\/qcom-postinstall-abota-a.sh",
-              "recipes-products\/images\/files\/qcom-postinstall-abota-b.sh",
               "classes\/qcom-swupdate-abota-image.bbclass"
             ]
           },

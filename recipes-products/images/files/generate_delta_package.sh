@@ -3,7 +3,7 @@
 # present in both a "source" (currently-installed) and "dest" (target)
 # build directory. Picks its sw-description verbatim from --scripts
 # (sw-description-diff for --mode differential, sw-description-stream for
-# --mode stream) and bundles the qcom-postinstall-abota-{a,b}.sh scripts
+# --mode stream) and bundles the qcom-postinstall-abota.sh script
 # from the same directory, so the package flips the active slot itself,
 # like a production OTA package.
 #
@@ -39,7 +39,7 @@
 # never bundled into the .swu.
 #
 # This script lives in the same dir as the sw-description templates and the
-# qcom-postinstall-abota-{a,b}.sh scripts, so --scripts is simply the
+# qcom-postinstall-abota.sh script, so --scripts is simply the
 # directory it sits in (use --scripts . when run from here).
 #
 # Example (differential, default images, signed):
@@ -167,9 +167,8 @@ if [ "$MODE" = "differential" ]; then
 else
     SW_DESCRIPTION_TEMPLATE="$SCRIPTS_DIR/sw-description-stream"
 fi
-POSTINSTALL_A="$SCRIPTS_DIR/qcom-postinstall-abota-a.sh"
-POSTINSTALL_B="$SCRIPTS_DIR/qcom-postinstall-abota-b.sh"
-for f in "$SW_DESCRIPTION_TEMPLATE" "$POSTINSTALL_A" "$POSTINSTALL_B"; do
+POSTINSTALL="$SCRIPTS_DIR/qcom-postinstall-abota.sh"
+for f in "$SW_DESCRIPTION_TEMPLATE" "$POSTINSTALL"; do
     if [ ! -f "$f" ]; then
         echo "Error: required file not found: $f" >&2
         exit 1
@@ -259,22 +258,19 @@ for image in "${IMAGE_NAMES[@]}"; do
     SHA256_SED_ARGS+=(-e "s|@@${PLACEHOLDER}@@|$SHA256_VALUE|g")
 done
 
-# The postinstall scripts are bundled into the .swu too, and under
+# The postinstall script is bundled into the .swu too, and under
 # CONFIG_SIGNED_IMAGES=y every sw-description entry -- including scripts --
 # must carry a sha256 or check_missing_hash() rejects the package
-# ("Hash not set for qcom-postinstall-abota-b.sh"). Hash the exact bytes
-# that get bundled (the scripts are copied verbatim below).
-SHA256_POSTINST_A="$(sha256sum "$POSTINSTALL_A" | cut -d ' ' -f1)"
-SHA256_POSTINST_B="$(sha256sum "$POSTINSTALL_B" | cut -d ' ' -f1)"
-SHA256_SED_ARGS+=(-e "s|@@SHA256_POSTINST_A@@|$SHA256_POSTINST_A|g")
-SHA256_SED_ARGS+=(-e "s|@@SHA256_POSTINST_B@@|$SHA256_POSTINST_B|g")
+# ("Hash not set for qcom-postinstall-abota.sh"). Hash the exact bytes
+# that get bundled (the script is copied verbatim below).
+SHA256_POSTINST="$(sha256sum "$POSTINSTALL" | cut -d ' ' -f1)"
+SHA256_SED_ARGS+=(-e "s|@@SHA256_POSTINST@@|$SHA256_POSTINST|g")
 
 sed -e "s/@@MACHINE@@/$MACHINE/g" -e "s|@@SWUPDATE_DELTA_URL@@|$DELTA_URL|g" \
     "${SHA256_SED_ARGS[@]}" \
     "$SW_DESCRIPTION_TEMPLATE" > "$WORKDIR/sw-description"
 
-cp "$POSTINSTALL_A" "$WORKDIR/$(basename "$POSTINSTALL_A")"
-cp "$POSTINSTALL_B" "$WORKDIR/$(basename "$POSTINSTALL_B")"
+cp "$POSTINSTALL" "$WORKDIR/$(basename "$POSTINSTALL")"
 
 # Under CONFIG_SIGNED_IMAGES=y the target verifies a CMS signature over
 # sw-description before parsing it. Produce sw-description.sig the same way
@@ -297,8 +293,7 @@ fi
         for f in "${BUNDLE_FILES[@]}"; do
             echo "$f"
         done
-        basename "$POSTINSTALL_A"
-        basename "$POSTINSTALL_B"
+        basename "$POSTINSTALL"
     } | cpio -ov -H crc --reproducible > "$OUTPUT_SWU"
 )
 

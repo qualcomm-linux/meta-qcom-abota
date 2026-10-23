@@ -35,9 +35,9 @@ software =
 
             scripts: (
                 {
-                    filename = "qcom-postinstall-abota-a.sh";
+                    filename = "qcom-postinstall-abota.sh";
                     type = "postinstall";
-                    sha256 = "@@SHA256_POSTINST_A@@";
+                    sha256 = "@@SHA256_POSTINST@@";
                 }
             );
         };
@@ -71,9 +71,9 @@ software =
 
             scripts: (
                 {
-                    filename = "qcom-postinstall-abota-b.sh";
+                    filename = "qcom-postinstall-abota.sh";
                     type = "postinstall";
-                    sha256 = "@@SHA256_POSTINST_B@@";
+                    sha256 = "@@SHA256_POSTINST@@";
                 }
             );
         };
