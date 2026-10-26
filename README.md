@@ -177,14 +177,12 @@ abctl --get_active
 ```
 
 Then apply the package (the command is the same for full and incremental
-packages). For example, to install into slot B on the QCS8300 RIDE-SX:
+packages).
 
 ```sh
-swupdate -e stable,slot_b -i /opt/test-rdiff.swu -H board:qcs8300-ride-sx -m -M -l 3
+swupdate -i /opt/update.swu -H board:qcs8300-ride-sx -m -M -l 3
 ```
 
-- `-e stable,slot_<a|b>` — select the sw-description stanza for the inactive
-  slot you are updating into (the opposite of `abctl --get_active`).
 - `-i <path>` — the `.swu` package to install.
 - `-H board:qcs8300-ride-sx` — hardware-compatibility string; must match the
   `hardware-compatibility` entry in the package's `sw-description`.
