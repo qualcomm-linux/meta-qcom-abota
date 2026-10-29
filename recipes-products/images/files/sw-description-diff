@@ -2,80 +2,106 @@ software =
 {
     version = "";
 
-    stable:
-    {
-        hardware-compatibility: [ "@@MACHINE@@" ];
+    hardware-compatibility: [ "@@MACHINE@@" ];
 
-        slot_a:
+    # Resolve the target device AND the rdiff base for each image at install
+    # time instead of hard-coding them per slot, so a single images: block
+    # serves both slots and the previous slot_a/slot_b duplication disappears.
+    #
+    # Requires CONFIG_LUA=y in the swupdate build (set in
+    # recipes-support/swupdate/swupdate/qcom-swupdate.cfg). embedded-script is
+    # fail-closed: a binary built without Lua aborts the whole update with
+    # "Required embedded script but no Lua not available" rather than silently
+    # ignoring the hook, so the two must stay paired.
+    embedded-script = "
+        -- Point img.device at the INACTIVE slot (the OTA write target) and
+        -- img.properties.rdiffbase at the ACTIVE slot (the base the rdiff
+        -- patch is applied against) for img.properties.part.
+        --
+        -- abctl reports the active slot two ways: as its exit code (0 = a,
+        -- 1 = b) and as a line on stdout ('Active slot is a'/'...is b') --
+        -- see do_get_active() in recipes-bsp/ab-update/files/abctl/src/abctl.cpp.
+        -- We parse stdout rather than the exit status because a non-zero exit
+        -- is a legitimate result here (slot b) and io.popen's close-status
+        -- encoding is not portable across Lua 5.1/5.2+.
+        --
+        -- Partition labels in this layer are asymmetric: slot A carries no
+        -- suffix and slot B carries '_b' (system/system_b, efi/efi_b -- see
+        -- recipes-bsp/partition/files/qcs8300-partitions-abota.conf), so the
+        -- suffix is '' for a and '_b' for b, not '_a'/'_b'.
+        --
+        -- Returning false aborts the update. That is deliberate: if the active
+        -- slot cannot be determined we must not guess a device and risk
+        -- overwriting the running slot.
+        function set_device(img)
+            local part = img.properties['part']
+            if not part then
+                print('set_device: image ' .. tostring(img.filename) ..
+                      ' has no properties.part')
+                return false, img
+            end
+
+            local f = io.popen('abctl --get_active 2>/dev/null')
+            if not f then
+                print('set_device: cannot run abctl --get_active')
+                return false, img
+            end
+            local out = f:read('*a') or ''
+            f:close()
+
+            local active = out:match('Active slot is ([ab])')
+            if not active then
+                print('set_device: cannot determine active slot from abctl output')
+                return false, img
+            end
+
+            -- Write the slot that is NOT running; diff against the running one.
+            local target_suffix = ''
+            local base_suffix = ''
+            if active == 'a' then
+                target_suffix = '_b'
+            else
+                base_suffix = '_b'
+            end
+
+            img.device = '/dev/disk/by-partlabel/' .. part .. target_suffix
+            img.properties['rdiffbase'] =
+                '/dev/disk/by-partlabel/' .. part .. base_suffix
+            print('set_device: ' .. part .. ' -> device ' .. img.device ..
+                  ', rdiffbase ' .. img.properties['rdiffbase'] ..
+                  ' (active slot ' .. active .. ')')
+            return true, img
+        end
+    ";
+
+    images: (
         {
-            hardware-compatibility: [ "@@MACHINE@@" ];
+            filename = "system.rdiff";
+            type = "rdiff_image";
+            sha256 = "@@SHA256_SYSTEM@@";
+            hook = "set_device";
 
-            images: (
-                {
-                    filename = "system.rdiff";
-                    device = "/dev/disk/by-partlabel/system";
-                    type = "rdiff_image";
-                    sha256 = "@@SHA256_SYSTEM@@";
-
-                    properties: {
-                        rdiffbase = "/dev/disk/by-partlabel/system_b";
-                    };
-                },
-                {
-                    filename = "efi.rdiff";
-                    device = "/dev/disk/by-partlabel/efi";
-                    type = "rdiff_image";
-                    sha256 = "@@SHA256_EFI@@";
-
-                    properties: {
-                        rdiffbase = "/dev/disk/by-partlabel/efi_b";
-                    };
-                }
-            );
-
-            scripts: (
-                {
-                    filename = "qcom-postinstall-abota.sh";
-                    type = "postinstall";
-                    sha256 = "@@SHA256_POSTINST@@";
-                }
-            );
-        };
-
-        slot_b:
+            properties: {
+                part = "system";
+            };
+        },
         {
-            hardware-compatibility: [ "@@MACHINE@@" ];
+            filename = "efi.rdiff";
+            type = "rdiff_image";
+            sha256 = "@@SHA256_EFI@@";
+            hook = "set_device";
 
-            images: (
-                {
-                    filename = "system.rdiff";
-                    device = "/dev/disk/by-partlabel/system_b";
-                    type = "rdiff_image";
-                    sha256 = "@@SHA256_SYSTEM@@";
+            properties: {
+                part = "efi";
+            };
+        }
+    );
 
-                    properties: {
-                        rdiffbase = "/dev/disk/by-partlabel/system";
-                    };
-                },
-                {
-                    filename = "efi.rdiff";
-                    device = "/dev/disk/by-partlabel/efi_b";
-                    type = "rdiff_image";
-                    sha256 = "@@SHA256_EFI@@";
-
-                    properties: {
-                        rdiffbase = "/dev/disk/by-partlabel/efi";
-                    };
-                }
-            );
-
-            scripts: (
-                {
-                    filename = "qcom-postinstall-abota.sh";
-                    type = "postinstall";
-                    sha256 = "@@SHA256_POSTINST@@";
-                }
-            );
-        };
-    };
+    scripts: (
+        {
+            filename = "qcom-postinstall-abota.sh";
+            type = "postinstall";
+            sha256 = "@@SHA256_POSTINST@@";
+        }
+    );
 }
