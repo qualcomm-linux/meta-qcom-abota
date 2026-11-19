@@ -12,9 +12,9 @@ Subject: [PATCH] qcom_ptool/ptool: exempt known asymmetric bases from A/B
 efi/system use an unsuffixed label for the 'a' slot on some platforms,
 and mdtp/mdtpsecapp/usb4fw are only ever flashed on the 'a' slot.
 ValidatePartitions() was flagging these as pairing errors and aborting
-the build for qcs8300-ride-sx.
+the build for qcs8300-ride-sx & qcm6490-idp.
 
-Upstream-Status: Inappropriate [customization for qcs8300-ride-sx partition layout]
+Upstream-Status: Inappropriate [customization for qcs8300-ride-sx & qcm6490-idp partition layout]
 Signed-off-by: Abhijeet Mandloi <amandloi@qti.qualcomm.com>
 
 ---
@@ -32,7 +32,7 @@ index cbf8f8f..6d1dea1 100755
 +# Partitions that are intentionally asymmetric between slots on some
 +# platforms (e.g. only an "_a" side is flashed, or the "a" side uses the
 +# bare label with no suffix) and must not be flagged by ValidatePartitions().
-+AB_PAIRING_EXEMPT_BASES = {"mdtp", "mdtpsecapp", "usb4fw", "efi", "system"}
++AB_PAIRING_EXEMPT_BASES = {"mdtp", "mdtpsecapp", "usb4fw", "efi", "system", "rootfs"}
 +
 +
  def ValidatePartitions():
