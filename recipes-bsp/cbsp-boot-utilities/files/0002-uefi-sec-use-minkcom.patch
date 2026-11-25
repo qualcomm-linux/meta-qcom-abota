@@ -1,0 +1,661 @@
+From: QLI integration <noreply@example.com>
+Subject: [PATCH] uefi-sec: use MinkCom for variable sync
+
+Initialize Mink IPC through MinkCom, open UEFISecApp by UID, and invoke
+syncVarTables through its Mink object interface. Generate the public
+IClientEnv client binding from the BSD-3-Clause-Clear IDLs.
+
+Upstream-Status: Pending [Not submitted upstream]
+
+diff --git a/Makefile.am b/Makefile.am
+index 65396d1..e074099 100755
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -14,13 +14,24 @@ AM_CPPFLAGS = -D__packed__= \
+ bin_PROGRAMS = uefi_sec
+ 
+ uefi_sec_SOURCES = uefi_sec.c
+-uefi_sec_CPPFLAGS = $(AM_CPPFLAGS) $(QCOMTEE_CFLAGS)
++uefi_sec_CPPFLAGS = $(AM_CPPFLAGS) $(MINKADAPTOR_CFLAGS) -I$(builddir)
+ uefi_sec_CFLAGS = $(AM_CFLAGS)
+-uefi_sec_LDFLAGS = -lpthread
+-uefi_sec_LDADD = $(QCOMTEE_LIBS) -lqcbor
++uefi_sec_LDADD = $(MINKADAPTOR_LIBS)
+ 
+-QCOMTEE_CFLAGS = @QCOMTEE_CFLAGS@
+-QCOMTEE_LIBS = @QCOMTEE_LIBS@
++EXTRA_DIST = idl/IClientEnv.idl idl/IIO.idl idl/ICredentials.idl
++BUILT_SOURCES = IClientEnv.h IIO.h ICredentials.h
++CLEANFILES = $(BUILT_SOURCES)
++
++IDLC = @IDLC@
++
++IIO.h: $(srcdir)/idl/IIO.idl
++	$(IDLC) -I $(srcdir)/idl $< -o $@
++
++ICredentials.h: $(srcdir)/idl/ICredentials.idl
++	$(IDLC) -I $(srcdir)/idl $< -o $@
++
++IClientEnv.h: $(srcdir)/idl/IClientEnv.idl IIO.h ICredentials.h
++	$(IDLC) -I $(srcdir)/idl $< -o $@
+ 
+ if USE_SYSTEMD
+ systemdunitdir = @SYSTEMD_UNITDIR@
+diff --git a/configure.ac b/configure.ac
+index 8a89d42..b22b05a 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -19,10 +19,16 @@
+ 
+ PKG_PROG_PKG_CONFIG
+ 
+-QCOMTEE_CFLAGS=""
+-QCOMTEE_LIBS="-lqcomtee -lqcbor"
+-AC_SUBST(QCOMTEE_CFLAGS)
+-AC_SUBST(QCOMTEE_LIBS)
++PKG_CHECK_MODULES(MINKADAPTOR, minkadaptor, ,
++        AC_MSG_ERROR([minkadaptor is required]))
++AC_SUBST(MINKADAPTOR_CFLAGS)
++AC_SUBST(MINKADAPTOR_LIBS)
++
++AC_PATH_PROG(IDLC, idlc, no)
++if test "x$IDLC" = "xno"; then
++        AC_MSG_ERROR([mink-idl-compiler-native is required])
++fi
++AC_SUBST(IDLC)
+ 
+ PKG_CHECK_MODULES(GLIB, glib-2.0 >= 2.16, dummy=yes, AC_MSG_ERROR(GLib >= 2.16 is required))
+ GLIB_CFLAGS="$GLIB_CFLAGS"
+diff --git a/idl/IClientEnv.idl b/idl/IClientEnv.idl
+new file mode 100644
+index 0000000..a122b04
+--- /dev/null
++++ b/idl/IClientEnv.idl
+@@ -0,0 +1,168 @@
++// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
++// SPDX-License-Identifier: BSD-3-Clause-Clear
++
++include "IIO.idl"
++include "ICredentials.idl"
++
++/**
++ * IClientEnv is the interface that REE clients use to obtain objects
++ * from the TEE via MINK-IPC.
++ */
++ /** @cond */
++interface IClientEnv {
++/** @endcond */
++
++  /**
++   * @addtogroup IClientEnv
++   * @{
++   */
++
++  /**
++   * Error codes
++   */
++  /** @cond */
++  error ERROR_COMMONLIBS_ALREADY_LOADED;  /**< Commonlib already loaded */
++  error ERROR_APP_REGION_ALREADY_SET;     /**< TA region already set*/
++
++  /** @endcond */
++
++  /**
++    Gets a service object from the Client Environment.
++
++    @param[in]  uid  Identifies a class of service object.
++    @param[out] obj  Instance of the requested service.
++
++    @return
++    Object_OK on success.
++  */
++  method open (in uint32 uid,
++               out interface obj);
++
++  /**
++    Registers a REE client with the specified credentials and returns a
++    client environment object that the client can use to obtain service
++    objects. \n
++
++    @note1hang: This method is DEPRECATED.
++
++    @param[in] credentials  Buffer containing credentials identifying the
++                            client.
++    @param[out] clientEnv   Returned registered client environment object.
++
++    @return
++    Object_OK on success.
++  */
++  method registerLegacy (in buffer credentials,
++                         out interface clientEnv);
++
++  /**
++    Registers a REE client with the specified credentials and returns a
++    client environment object that the client can use to obtain service
++    objects.
++
++    @param[in] credentials  Callback object implementing the IIO
++                            interface which can be queried to return the REE
++                            credentials of the client being registered.
++    @param[out] clientEnv   Returned registered client environment object.
++
++    @return
++    Object_OK on success.
++  */
++  method registerAsClient (in IIO credentials,
++                   out interface clientEnv);
++
++  /**
++    Registers a REE client with the specified credentials and restricts it
++    to the specified list of UIDs. The client can use the returned client
++    environment object to obtain service objects.
++
++    The returned client environment object can only obtain the
++    services with UIDs in the passed UID list.
++
++    @param[in] credentials  Callback object implementing the IIO
++                            interface which can be queried to return the REE
++                            credentials of the client being registered.
++    @param[in] uids         Class UIDs list the returned client environment
++                            object can obtain.
++    @param[out] clientEnv   Returned registered client environment object.
++
++    @return
++    Object_OK on success.
++  */
++  method registerWithWhitelist (in IIO credentials,
++                                in uint32[] uids,
++                                out interface clientEnv);
++
++  /**
++    Asserts that QTEE has no references to remote NS domain objects other than
++    the single reference to the primordial object and that the NS domain has no
++    references to QTEE objects other than the single reference to the root
++    ClientEnv.
++
++    @return Object_OK on success, else assert on failure.
++   */
++  method notifyDomainChange();
++
++  /**
++    Registers a REE client with the ICredentials object and returns a
++    client environment object that the client can use to obtain service
++    objects.
++
++    @param[in] credentials  Callback object implementing the ICredentials
++                            interface which can be queried to return the REE
++                            credentials of the client being registered.
++                            This can be NULL only if client code is privilieged
++                            code (kernel or higher exception level.)
++    @param[out] clientEnv   Returned registered client environment object.
++
++    @return
++    Object_OK on success.
++  */
++  method registerWithCredentials (in ICredentials credentials,
++                                  out interface clientEnv);
++
++  /**
++    Loads Cmnlib binary.
++    The library binary is passed as a buffer.
++
++    @param[in]  cmnlibElf         Buffer containing ELF image.
++
++    @return  Object_OK if successful.
++   */
++  method loadCmnlibFromBuffer(in buffer cmnlibElf);
++
++  /**
++    Configure TA region.
++    TA region address and length is passed as a buffer.
++
++    @param[in]  appRgnAddr         TA region base address.
++    @param[in]  appRgnSize         TA region size.
++
++    @return  Object_OK if successful.
++   */
++  method configTaRegion(in uint64 appRgnAddr, in uint32 appRgnSize);
++
++  /**
++    Registers a thread to be used for ADCI (Arbitrary Destination Callback
++    Invocations). Will not return until successfully canceled unless an error
++    occurs.
++
++    @return
++    Object_OK on successful cancel of ADCI accept thread.
++    Object_ERROR on failure.
++   */
++  method adciAccept();
++
++  /**
++    Cancels any previously registered ADCI accept thread.
++
++    @return
++    Object_OK on success.
++    Object_ERROR on failure.
++   */
++  method adciShutdown();
++
++
++  /* @} */ /* end_addtogroup IClientEnv */
++};
++
+diff --git a/idl/ICredentials.idl b/idl/ICredentials.idl
+new file mode 100644
+index 0000000..2440dd3
+--- /dev/null
++++ b/idl/ICredentials.idl
+@@ -0,0 +1,68 @@
++// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
++// SPDX-License-Identifier: BSD-3-Clause-Clear
++
++/** @cond */
++interface ICredentials {
++/** @endcond */
++
++  /**
++   * @addtogroup ICredentials
++   * @{
++   */
++
++  /** @cond */
++  /** No property was found with the requested index or name */
++  error ERROR_NOT_FOUND;
++
++  /** The buffer provided to receive the name was too small */
++  error ERROR_NAME_SIZE;
++
++  /** The buffer provided to receive the value was too small */
++  error ERROR_VALUE_SIZE;
++  /** @endcond */
++
++  /**
++    Gets the name of a property, given its position in the sequence of
++    properties.
++
++    @param[in]  index  A (zero-based) index into the set of properties.
++    @param[out] name   Property name, including a terminating zero byte.
++    @param[out] value  Property value, including a terminating zero byte.
++
++    @return
++    Object_OK -- Function returned successfully. \n
++    ICredentials_ERROR_NAME_SIZE -- Supplied buffer not large enough to
++                                    contain the name. \n
++    ICredentials_ERROR_VALUE_SIZE -- Supplied buffer not large enough to
++                                     contain the value. \n
++    ICredentials_ERROR_NOT_FOUND -- No properties at given index.
++  */
++  method getPropertyByIndex(in uint32 index,
++                            out buffer name,
++                            out buffer value);
++
++  /**
++    Returns a property value, given a name.
++
++    Note that <tt>name</tt> and <tt>value</tt> are buffer types, not strings.
++    The <tt>name</tt> buffer does not contain any null terminating character.
++    <tt>name</tt> length should be passed as the size of the buffer
++    if <tt>name</tt> is a zero-terminated string.
++
++    However, the <tt>value</tt> buffer will be populated with a
++    terminating null byte and the resulting output length will be set to
++    size, including the terminating null.
++
++    @param[in]  name   Property name.
++    @param[out] value  Property value, including a terminating zero byte.
++
++    @return
++    Object_OK -- Function returned successfully. \n
++    ICredentials_ERROR_VALUE_SIZE -- Supplied buffer not large enough to
++                                     contain value. \n
++    ICredentials_ERROR_NOT_FOUND -- No properties found with given name.
++  */
++  method getValueByName(in buffer name,
++                        out buffer value);
++    /** @} */ /* end_addtogroup ICredentials */
++};
+diff --git a/idl/IIO.idl b/idl/IIO.idl
+new file mode 100644
+index 0000000..bc85ce2
+--- /dev/null
++++ b/idl/IIO.idl
+@@ -0,0 +1,64 @@
++// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
++// SPDX-License-Identifier: BSD-3-Clause-Clear
++
++/** @cond */
++interface IIO {
++/** @endcond */
++
++  /**
++   * @addtogroup IIO
++   * @{
++   */
++
++  /** @cond */
++  /** Offset parameter falls outside the allowable range. */
++  error ERROR_OFFSET_OUT_OF_BOUNDS;
++
++  /** Source buffer for write operation larger than allowed. */
++  error ERROR_SOURCE_BUFFER_TOO_LARGE;
++
++  /** Parameter buffer length and offset overflow. */
++  error ERROR_INVALID_BUFFER_AND_OFFSET;
++  /** @endcond */
++
++  /**
++    Retrieves maximum value for the combination of offset and buffer
++    length for readAtOffset() and writeAtOffset().
++
++    @param[out] len Maximum value for the combination of offset and
++                    buffer length passed to readAtOffset() and
++                    writeAtOffset().
++
++    @return Object_OK on success.
++   */
++  method getLength(out uint64 len);
++
++  /**
++    Copies from source at the given offset into the output buffer up
++    to the size of the output buffer.  If the output buffer is larger
++    than the source at the provided offset, the remaining bytes of
++    the output buffer remain unchanged.
++
++    @param[in]  offset Offset to begin reading from source
++                       buffer.
++    @param[out] data   Destination to copy source data into.
++
++    @return Object_OK on success.
++   */
++  method readAtOffset(in uint64 offset, out buffer data);
++
++  /**
++    Copies in to the destination at the given offset up to input buffer size. \n
++    If the combined input buffer length and offset are a greater length than
++    the destination, an error is returned and no data is copied.
++
++    @param[in] offset Offset to begin writing into the
++                      destination.
++    @param[in] data   Source of data to copy to destination.
++
++    @return Object_OK on success.
++   */
++  method writeAtOffset(in uint64 offset, in buffer data);
++
++  /** @} */ /* end_addtogroup IIO */
++};
+diff --git a/uefi_sec.c b/uefi_sec.c
+index 8730e7f..a182219 100644
+--- a/uefi_sec.c
++++ b/uefi_sec.c
+@@ -3,149 +3,61 @@
+  * SPDX-License-Identifier: BSD-3-Clause-Clear
+  */
+ 
+-#include <errno.h>
+-#include <pthread.h>
+-#include <signal.h>
+ #include <stdint.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+-#include <sys/ioctl.h>
+ #include <syslog.h>
+ #include <unistd.h>
+ 
+-#include <qcomtee_object.h>
+-#include <qcomtee_object_types.h>
++#include <MinkCom.h>
++#include <IClientEnv.h>
+ 
+ #define TABLE_ID_RESERVED 0
+-#define UEFISECAPP_UID 413
+-#define ICLIENTENV_OP_OPEN 0
+-#define ICLIENTENV_OP_REGISTER_AS_CLIENT 2
++#define UEFISECAPP_UID 0x19D
+ #define IUEFISECAPP_OP_SYNC_VAR_TABLES 6
+ #define SYNC_INTERVAL_SECONDS 600
+ 
+-static struct qcomtee_object *tee_root;
+-static struct qcomtee_object *credentials;
+-static struct qcomtee_object *client_env;
+-static struct qcomtee_object *uefisec_app;
+-static pthread_t request_thread;
+-static volatile sig_atomic_t stop_requested;
+-static int request_thread_started;
++static Object root_env = Object_NULL;
++static Object client_env = Object_NULL;
++static Object uefisec_app = Object_NULL;
+ 
+-static void stop_request_thread(int signal_number)
++static int start_mink_client(void)
+ {
+-	(void)signal_number;
+-	stop_requested = 1;
+-}
+-
+-static void *process_qcomtee_requests(void *arg)
+-{
+-	struct qcomtee_object *root = arg;
+-
+-	while (!stop_requested) {
+-		if (qcomtee_object_process_one(root) != 0) {
+-			if (errno == EINTR && stop_requested)
+-				break;
+-			if (errno == EINTR)
+-				continue;
+-			syslog(LOG_ERR, "qcomtee request processing failed: %s",
+-			       strerror(errno));
+-			usleep(10000);
+-		}
+-	}
+-
+-	return NULL;
+-}
+-
+-static int start_qcomtee_client(void)
+-{
+-	struct sigaction action = {0};
+-	struct qcomtee_param params[2] = {0};
+-	qcomtee_result_t result = QCOMTEE_ERROR;
+-	int ret;
+-	int invoke_errno;
+-	uint32_t uid = UEFISECAPP_UID;
+-
+-	action.sa_handler = stop_request_thread;
+-	sigemptyset(&action.sa_mask);
+-	if (sigaction(SIGUSR1, &action, NULL) != 0) {
+-		syslog(LOG_ERR, "failed to install qcomtee worker signal handler: %s",
+-		       strerror(errno));
+-		return -1;
+-	}
+-
+-	tee_root = qcomtee_object_root_init("/dev/tee0", ioctl, NULL, NULL);
+-	if (tee_root == QCOMTEE_OBJECT_NULL) {
+-		syslog(LOG_ERR, "failed to open qcomtee root on /dev/tee0: %s",
+-		       strerror(errno));
+-		return -1;
+-	}
++	int32_t result;
++	int32_t ret;
+ 
+-	ret = pthread_create(&request_thread, NULL, process_qcomtee_requests,
+-			     tee_root);
+-	if (ret != 0) {
+-		syslog(LOG_ERR, "failed to start qcomtee request worker: %s",
+-		       strerror(ret));
++	result = MinkCom_getRootEnvObject(&root_env);
++	if (result != Object_OK || Object_isNull(root_env)) {
++		syslog(LOG_ERR, "MinkCom_getRootEnvObject failed: result=%d (0x%x)",
++		       result, (uint32_t)result);
+ 		return -1;
+ 	}
+-	request_thread_started = 1;
+ 
+-	ret = qcomtee_object_credentials_init(tee_root, &credentials);
+-	if (ret != 0) {
+-		syslog(LOG_ERR, "failed to initialize qcomtee credentials object");
++	result = MinkCom_getClientEnvObject(root_env, &client_env);
++	if (result != Object_OK || Object_isNull(client_env)) {
++		syslog(LOG_ERR, "MinkCom_getClientEnvObject failed: result=%d (0x%x)",
++		       result, (uint32_t)result);
+ 		return -1;
+ 	}
++	syslog(LOG_NOTICE, "MinkCom_getClientEnvObject succeeded: object_returned=yes");
+ 
+-	params[0].attr = QCOMTEE_OBJREF_INPUT;
+-	params[0].object = credentials;
+-	params[1].attr = QCOMTEE_OBJREF_OUTPUT;
+-	params[1].object = QCOMTEE_OBJECT_NULL;
+-	ret = qcomtee_object_invoke(tee_root, ICLIENTENV_OP_REGISTER_AS_CLIENT,
+-				    params, 2, &result);
+-	if (ret == 0) {
+-		/* Ownership of the credentials callback transfers to QTEE. */
+-		credentials = QCOMTEE_OBJECT_NULL;
+-		client_env = params[1].object;
+-	}
+-	if (ret != 0 || result != QCOMTEE_OK ||
+-	    client_env == QCOMTEE_OBJECT_NULL) {
+-		syslog(LOG_ERR, "qcomtee client registration failed: ret=%d result=%u",
+-		       ret, result);
+-		return -1;
+-	}
+-
+-	params[0] = (struct qcomtee_param) {
+-		.attr = QCOMTEE_UBUF_INPUT,
+-		.ubuf = { .addr = &uid, .size = sizeof(uid) },
+-	};
+-	params[1] = (struct qcomtee_param) {
+-		.attr = QCOMTEE_OBJREF_OUTPUT,
+-		.object = QCOMTEE_OBJECT_NULL,
+-	};
+-	result = QCOMTEE_ERROR;
+-	syslog(LOG_NOTICE, "IClientEnv_open request: uid=%u op=%u", uid,
+-	       ICLIENTENV_OP_OPEN);
+-	errno = 0;
+-	ret = qcomtee_object_invoke(client_env, ICLIENTENV_OP_OPEN, params, 2,
+-				    &result);
+-	invoke_errno = errno;
++	syslog(LOG_NOTICE, "IClientEnv_open request: uid=%u (0x%x)",
++	       UEFISECAPP_UID, UEFISECAPP_UID);
++	ret = IClientEnv_open(client_env, UEFISECAPP_UID, &uefisec_app);
+ 	syslog(LOG_NOTICE,
+-	       "IClientEnv_open returned: uid=%u ret=%d result=%u (0x%x) object_returned=%s",
+-	       uid, ret, result, result,
+-	       params[1].object != QCOMTEE_OBJECT_NULL ? "yes" : "no");
+-	if (ret != 0)
+-		syslog(LOG_ERR, "IClientEnv_open local invoke error: errno=%d (%s)",
+-		       invoke_errno, strerror(invoke_errno));
+-	if (ret == 0)
+-		uefisec_app = params[1].object;
+-	if (ret != 0 || result != QCOMTEE_OK ||
+-	    uefisec_app == QCOMTEE_OBJECT_NULL) {
+-		syslog(LOG_ERR, "opening UEFISecApp UID %u failed: ret=%d result=%u",
+-		       uid, ret, result);
++	       "IClientEnv_open returned: uid=%u (0x%x) result=%d (0x%x) object_returned=%s",
++	       UEFISECAPP_UID, UEFISECAPP_UID, ret, (uint32_t)ret,
++	       Object_isNull(uefisec_app) ? "no" : "yes");
++	if (ret != Object_OK || Object_isNull(uefisec_app)) {
++		syslog(LOG_ERR,
++		       "opening UEFISecApp UID %u (0x%x) failed: result=%d (0x%x)",
++		       UEFISECAPP_UID, UEFISECAPP_UID, ret, (uint32_t)ret);
+ 		return -1;
+ 	}
+-	syslog(LOG_NOTICE, "opened UEFISecApp UID %u successfully", uid);
+ 
++	syslog(LOG_NOTICE, "opened UEFISecApp UID %u (0x%x) successfully",
++	       UEFISECAPP_UID, UEFISECAPP_UID);
+ 	return 0;
+ }
+ 
+@@ -153,24 +64,17 @@ static int sync_variable_tables(void)
+ {
+ 	uint32_t table_id = TABLE_ID_RESERVED;
+ 	uint32_t error_code = 0;
+-	struct qcomtee_param params[2] = {
+-		{
+-			.attr = QCOMTEE_UBUF_INPUT,
+-			.ubuf = { .addr = &table_id, .size = sizeof(table_id) },
+-		},
+-		{
+-			.attr = QCOMTEE_UBUF_OUTPUT,
+-			.ubuf = { .addr = &error_code, .size = sizeof(error_code) },
+-		},
++	ObjectArg args[2] = {
++		{ .bi = { .ptr = &table_id, .size = sizeof(table_id) } },
++		{ .b = { .ptr = &error_code, .size = sizeof(error_code) } },
+ 	};
+-	qcomtee_result_t result = QCOMTEE_ERROR;
+-	int ret;
+-
+-	ret = qcomtee_object_invoke(uefisec_app, IUEFISECAPP_OP_SYNC_VAR_TABLES,
+-				    params, 2, &result);
+-	if (ret != 0 || result != QCOMTEE_OK) {
+-		syslog(LOG_ERR, "syncVarTables transport failed: ret=%d result=%u",
+-		       ret, result);
++	int32_t result;
++
++	result = Object_invoke(uefisec_app, IUEFISECAPP_OP_SYNC_VAR_TABLES,
++			       args, ObjectCounts_pack(1, 1, 0, 0));
++	if (result != Object_OK) {
++		syslog(LOG_ERR, "syncVarTables transport failed: result=%d (0x%x)",
++		       result, (uint32_t)result);
+ 		return -1;
+ 	}
+ 	if (error_code != 0) {
+@@ -182,30 +86,14 @@ static int sync_variable_tables(void)
+ 	return 0;
+ }
+ 
+-static void stop_qcomtee_client(void)
++static void stop_mink_client(void)
+ {
+-	if (uefisec_app != QCOMTEE_OBJECT_NULL) {
+-		qcomtee_object_refs_dec(uefisec_app);
+-		uefisec_app = QCOMTEE_OBJECT_NULL;
+-	}
+-	if (client_env != QCOMTEE_OBJECT_NULL) {
+-		qcomtee_object_refs_dec(client_env);
+-		client_env = QCOMTEE_OBJECT_NULL;
+-	}
+-	if (credentials != QCOMTEE_OBJECT_NULL) {
+-		qcomtee_object_refs_dec(credentials);
+-		credentials = QCOMTEE_OBJECT_NULL;
+-	}
+-	if (request_thread_started) {
+-		stop_requested = 1;
+-		pthread_kill(request_thread, SIGUSR1);
+-		pthread_join(request_thread, NULL);
+-		request_thread_started = 0;
+-	}
+-	if (tee_root != QCOMTEE_OBJECT_NULL) {
+-		qcomtee_object_refs_dec(tee_root);
+-		tee_root = QCOMTEE_OBJECT_NULL;
+-	}
++	Object_RELEASE_IF(uefisec_app);
++	uefisec_app = Object_NULL;
++	Object_RELEASE_IF(client_env);
++	client_env = Object_NULL;
++	Object_RELEASE_IF(root_env);
++	root_env = Object_NULL;
+ }
+ 
+ int main(int argc, char *argv[])
+@@ -214,7 +102,7 @@ int main(int argc, char *argv[])
+ 	int ret = EXIT_SUCCESS;
+ 
+ 	openlog("uefi_sec", LOG_PID | (isatty(STDERR_FILENO) ? LOG_PERROR : 0), LOG_DAEMON);
+-	if (start_qcomtee_client() != 0) {
++	if (start_mink_client() != 0) {
+ 		ret = EXIT_FAILURE;
+ 		goto out;
+ 	}
+@@ -228,7 +116,7 @@ int main(int argc, char *argv[])
+ 	} while (1);
+ 
+ out:
+-	stop_qcomtee_client();
++	stop_mink_client();
+ 	closelog();
+ 	return ret;
+ }

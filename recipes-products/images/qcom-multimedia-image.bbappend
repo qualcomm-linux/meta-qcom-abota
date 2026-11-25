@@ -17,6 +17,7 @@ CORE_IMAGE_BASE_INSTALL += " \
     qcom-efiabctl-abota \
     swupdate \
     mirror-copy \
+    cbsp-boot-utilities \
     "
 
 QCOM_PARTITION_FILES_SUBDIR:qcs8300-ride-sx = "partitions/qcs8300-ride-sx/emmc"
